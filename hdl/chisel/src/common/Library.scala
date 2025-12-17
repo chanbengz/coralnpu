@@ -247,3 +247,30 @@ object MuxUpTo1H {
     apply(defaultVal, sel.map(_._1), sel.map(_._2))
   }
 }
+
+object IrrevocableChecker {
+  def apply[T <: Data](x: IrrevocableIO[T]): IrrevocableIO[T] = {
+    val prevPending = RegNext(x.valid && !x.ready, false.B)
+    val prevBits  = RegNext(x.bits)
+
+    when(prevPending) {
+      assert(x.valid, "IrrevocableIO violation: valid dropped")
+      assert(x.bits.asUInt === prevBits.asUInt, "IrrevocableIO violation: bits changed")
+    }
+
+    x
+  }
+}
+
+object MakeIrrevocable {
+  // Upconverts ValidIO to (the supply side of) IrrevocableIO.
+  // Irrevocable assertions are performed.
+  def apply[T <: Data](in: ValidIO[T]): IrrevocableIO[T] = {
+    val out = MakeWireBundle[IrrevocableIO[T]](
+      Irrevocable(chiselTypeOf(in.bits)),
+      _.valid -> in.valid,
+      _.bits -> in.bits
+    )
+    IrrevocableChecker(out)
+  }
+}

@@ -110,7 +110,7 @@ class Conv2DTest:
 async def test_conv2d_4x1_h2w2(dut):
     t = Conv2DTest(in_d=4, out_d=1, out_h=2, out_w=2)
     await t.load_and_populate_input(dut)
-    await t.test(ref_target=4500, opt_target=4800)
+    await t.test(ref_target=5200, opt_target=5100)
 
 
 @cocotb.test()

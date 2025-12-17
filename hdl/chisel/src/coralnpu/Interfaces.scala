@@ -57,6 +57,8 @@ class IBusIO(p: Parameters) extends Bundle {
   val rdata = Input(UInt(p.fetchDataBits.W))
   // Fault information.
   val fault = Input(Valid(new FaultInfo(p)))
+
+  def fire: Bool = valid && ready
 }
 
 class FetchInstruction(p: Parameters) extends Bundle {

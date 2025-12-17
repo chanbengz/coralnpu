@@ -39,11 +39,9 @@ class Instruction(p: Parameters) extends Bundle {
 // Module which is responsible for performing
 // memory fetches which are requested by
 // `FetchControl`.
-// `ibus` should be treated like Chisel's
-// `IrrevocableIO`.
 class Fetcher(p: Parameters) extends Module {
   val io = IO(new Bundle {
-    val ctrl = Flipped(Decoupled(UInt(p.fetchAddrBits.W)))
+    val ctrl = Flipped(Irrevocable(UInt(p.fetchAddrBits.W)))
     val fetch = Output(Valid(new FetchResponse(p)))
     val ibus = new IBusIO(p)
   })
@@ -51,23 +49,40 @@ class Fetcher(p: Parameters) extends Module {
   val lsb = log2Ceil(p.fetchDataBits / 8)
   assert((p.fetchDataBits == 128 && lsb == 4) || (p.fetchDataBits == 256 && lsb == 5))
 
-  // The actual fetch transaction goes through without stopping.
+  // The fetch request goes through without stopping.
   io.ibus.valid := io.ctrl.valid
   io.ibus.addr := Cat(io.ctrl.bits(p.fetchAddrBits - 1, lsb), 0.U(lsb.W))
-  io.ctrl.ready := io.ibus.ready
 
-  // Address is buffered to accompany results.
-  val ibusFired = io.ctrl.valid && io.ibus.ready
-  val ibusCmd = RegNext(ForceZero(MakeValid(ibusFired, io.ctrl.bits)), MakeInvalid(UInt(32.W)))
-  // Fault is also buffered to accompany results.
-  val fault = RegNext(io.ibus.fault.valid, false.B)
-  io.fetch.valid := ibusCmd.valid
-  io.fetch.bits.addr := ibusCmd.bits
-  io.fetch.bits.fault := fault
-  for (i <- 0 until p.fetchInstrSlots) {
-    val offset = p.instructionBits * i
-    io.fetch.bits.inst(i) := io.ibus.rdata(offset + p.instructionBits - 1, offset)
-  }
+  // The ibus can have pipeline and we need to bookkeep:
+  // - The address of each transaction
+  // - Fault of each transaction, currently combinatorial from the address
+  val ibusAddrFire = io.ibus.fire
+  // TODO(davidgao): decouple the data path of ibus
+  val ibusDataFire = RegNext(ibusAddrFire, false.B)
+  // TODO(davidgao): parameterize the depth of this bookkeeping queue
+  val firedReads = Module(new Queue(new Bundle {
+    val addr = UInt(p.fetchAddrBits.W)
+    val fault = Bool()
+  }, 1, pipe=true))
+  firedReads.io.enq.valid := ibusAddrFire
+  firedReads.io.enq.bits.addr := io.ctrl.bits
+  firedReads.io.enq.bits.fault := io.ibus.fault.valid
+  firedReads.io.deq.ready := ibusDataFire
+  io.ctrl.ready := firedReads.io.enq.ready
+
+  // Buffer the fetched data to avoid itcm data->addr loop.
+  // TODO(davidgao): once ibus is pipelined, remove this buffer.
+  val resultReg = RegNext(MakeValid(
+      firedReads.io.deq.fire,
+      MakeWireBundle[FetchResponse](
+          new FetchResponse(p),
+          _.addr -> firedReads.io.deq.bits.addr,
+          _.inst -> UIntToVec(io.ibus.rdata, p.instructionBits),
+          _.fault -> firedReads.io.deq.bits.fault,
+      )
+  ))
+
+  io.fetch := resultReg
 }
 
 class FetchControl(p: Parameters) extends Module {
@@ -79,7 +94,7 @@ class FetchControl(p: Parameters) extends Module {
         val fetchData = Input(Valid(new FetchResponse(p)))
         val linkPort = Flipped(new RegfileLinkPortIO)
 
-        val fetchAddr = Decoupled(UInt(p.fetchAddrBits.W))
+        val fetchAddr = Irrevocable(UInt(p.fetchAddrBits.W))
         val bufferRequest = DecoupledVectorIO(new FetchInstruction(p), p.fetchInstrSlots)
         val bufferSpaces = Input(UInt(log2Ceil(p.fetchInstrSlots * 2 + 1).W))
     })
@@ -172,6 +187,8 @@ class FetchControl(p: Parameters) extends Module {
     val nValid = Mux(writeToBuffer, predecode.count, 0.U)
     io.bufferRequest.nValid := nValid
 
+    val ongoingFetch = RegInit(MakeInvalid(UInt(p.fetchAddrBits.W)))
+
     // PC is initialized with the CSR value below upon leaving reset.
     val pc = RegInit(MakeInvalid(UInt(32.W)))
     val pcNext = MuxCase(pc.bits, Seq(
@@ -190,19 +207,26 @@ class FetchControl(p: Parameters) extends Module {
     // of the transaction. We can only start a new fetch if there is sufficient
     // space AFTER we push what we have on hand.
     val insufficientBuffer = io.bufferSpaces < nValid +& p.fetchInstrSlots.U
+    // TODO(davidgao): decouple bus access and remove this
+    val waitForResult = RegNext(io.fetchAddr.fire, false.B)
     // Past branch or flush doesn't block us from initiating new fetches.
     val blockNewFetch = !pc.valid ||  // We're stil in reset.
-                        io.fetchData.valid || // Wait one cycle for next fetch.
                         currentBranchOrFlush ||
                         insufficientBuffer ||
+                        ongoingFetch.valid ||
+                        waitForResult ||
                         fetchFaultValid
-    val fetch = ForceZero(MakeValid(!blockNewFetch, pc.bits))
+    val fetch = MuxUpTo1H(MakeInvalid(UInt(p.fetchAddrBits.W)), Seq(
+        ongoingFetch.valid -> ongoingFetch,
+        !blockNewFetch -> MakeValid(pcNext),
+    ))
+    ongoingFetch := Mux(io.fetchAddr.ready, MakeInvalid(UInt(p.fetchAddrBits.W)), fetch)
 
     // All branch or flush are cleared once we're able to initiate a new fetch.
-    pastBranchOrFlush := ongoingBranchOrFlush && blockNewFetch
+    val newFetchInitiated = fetch.valid && !ongoingFetch.valid
+    pastBranchOrFlush := ongoingBranchOrFlush && !newFetchInitiated
 
-    io.fetchAddr.valid := fetch.valid
-    io.fetchAddr.bits := fetch.bits
+    io.fetchAddr <> MakeIrrevocable(fetch)
 }
 
 class UncachedFetch(p: Parameters) extends FetchUnit(p) {

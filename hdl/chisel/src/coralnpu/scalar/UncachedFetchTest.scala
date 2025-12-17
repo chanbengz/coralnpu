@@ -61,26 +61,22 @@ class FetchControlSpec extends AnyFreeSpec with ChiselSim {
       dut.io.bufferRequest.nValid.expect(0.U)
       dut.io.fetchAddr.valid.expect(0)
       dut.clock.step()
+      dut.io.fetchData.valid.poke(false.B)
 
-      // Resolve the branch
+      // Resolve the branch, triggering new fetch
       dut.io.branch.valid.poke(false.B)
       dut.io.bufferRequest.nValid.expect(0.U)
-      dut.clock.step()  // Temporary
-
-      // Initiate new fetch
-      dut.io.fetchData.valid.poke(false.B)
-      dut.io.fetchAddr.valid.expect(1)
       dut.io.fetchAddr.bits.expect(0x30000000)
+      dut.io.fetchAddr.valid.expect(1)
+      dut.io.fetchAddr.ready.poke(true.B)
+      dut.clock.step()
+      dut.io.fetchAddr.ready.poke(false.B)
       dut.clock.step()
 
-      // Handle fetch data
-      dut.io.fetchData.bits.addr.poke(0x30000000)
+      // Receiving fetch data triggers new fetch
       dut.io.fetchData.valid.poke(true.B)
+      dut.io.fetchData.bits.addr.poke(0x30000000)
       dut.io.bufferRequest.nValid.expect(8.U)
-      dut.clock.step()  // Temporary
-
-      // Initiate new fetch
-      dut.io.fetchData.valid.poke(false.B)
       dut.io.fetchAddr.valid.expect(1)
       dut.io.fetchAddr.bits.expect(0x30000020)
     }
@@ -190,6 +186,7 @@ class FetcherSpec extends AnyFreeSpec with ChiselSim {
       dut.io.fetch.valid.expect(0)
       dut.io.ibus.ready.poke(true.B)
       dut.io.ibus.rdata.poke("x0012d678000000000012d687".U(256.W))
+      dut.clock.step()
       dut.clock.step()
       dut.io.ctrl.ready.expect(1)
       dut.io.fetch.valid.expect(1)
