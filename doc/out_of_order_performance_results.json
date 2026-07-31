@@ -1,0 +1,116 @@
+{
+  "methodology": {
+    "host_os": "Linux",
+    "host_arch": "x86_64",
+    "bazel": "bazel 8.6.0",
+    "verilator": "Verilator v5.050 rev v5.050",
+    "clang": "Debian clang version 19.1.7 (3+b1)",
+    "lld": "Debian LLD 19.1.7 (compatible with GNU linkers)",
+    "benchmark": "softmax-inspired scalar integer divide-latency scheduling analogue",
+    "benchmark_variants": {
+      "naive": "dependent context-A normalization precedes independent context-B work",
+      "static_scheduled": "context-B work is manually interleaved across context-A divide latency"
+    },
+    "measured_counter": "mcycle reset immediately before the repeated kernel",
+    "runs_per_configuration": 3,
+    "simulator_limit_cycles": 1000000,
+    "simulator_targets": [
+      "//tests/verilator_sim:core_mini_axi_sim",
+      "//tests/verilator_sim:core_mini_inorder16_axi_sim",
+      "//tests/verilator_sim:core_mini_ooo_axi_sim"
+    ],
+    "benchmark_compile_flags": [
+      "--target=riscv32-unknown-elf",
+      "-march=rv32im_zicsr",
+      "-mabi=ilp32",
+      "-mno-relax",
+      "-nostdlib",
+      "-fuse-ld=lld",
+      "-Wl,--no-relax",
+      "-Wl,--gc-sections"
+    ]
+  },
+  "source": {
+    "git_commit": "4ea57b4966a4f85c8f00c4cf246a5bf77d53b278",
+    "dirty_worktree": false,
+    "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "elf_sha256": {
+      "naive": "bea2c972928634059b2b07e22f87cc111150708b9589958fe7fcb4fb70b210c6",
+      "static_scheduled": "ff152770199ca8a845952311da9db5d54e004862d4d1f848845a982546ec0162"
+    },
+    "simulator_sha256": {
+      "inorder_rob8": "cbcaeeed214530da87f80fa790e140f4a0deeae8ab14a6f5a8ecc07ae403eb2d",
+      "inorder_rob16": "a3f427de955fe74a07c798fb1f46b031c2002e2e45578182eca55d2ea440f706",
+      "ooo_rob16": "d322c431317e4a9d7253c44c9ff4114f4513b5becd07d35005821446bfbb2384"
+    }
+  },
+  "configurations": {
+    "naive_inorder_rob8": {
+      "cycles": [
+        12438,
+        12436,
+        12435
+      ],
+      "median_cycles": 12436
+    },
+    "static_scheduled_inorder_rob8": {
+      "cycles": [
+        10389,
+        10388,
+        10388
+      ],
+      "median_cycles": 10388
+    },
+    "naive_inorder_rob16": {
+      "cycles": [
+        12435,
+        12435,
+        12431
+      ],
+      "median_cycles": 12435
+    },
+    "static_scheduled_inorder_rob16": {
+      "cycles": [
+        10388,
+        10388,
+        10388
+      ],
+      "median_cycles": 10388
+    },
+    "naive_ooo_rob16": {
+      "cycles": [
+        10019,
+        10020,
+        10020
+      ],
+      "median_cycles": 10020
+    }
+  },
+  "comparisons": {
+    "ooo_vs_naive_inorder_matched_rob16": {
+      "cycles_saved": 2415,
+      "cycle_reduction_percent": 19.420989143546443,
+      "speedup": 1.2410179640718564
+    },
+    "static_schedule_vs_naive_inorder_rob8": {
+      "cycles_saved": 2048,
+      "cycle_reduction_percent": 16.468317787069797,
+      "speedup": 1.1971505583365423
+    },
+    "static_schedule_vs_naive_inorder_matched_rob16": {
+      "cycles_saved": 2047,
+      "cycle_reduction_percent": 16.461600321672698,
+      "speedup": 1.1970542934154793
+    },
+    "ooo_vs_static_schedule_inorder_matched_rob16": {
+      "cycles_saved": 368,
+      "cycle_reduction_percent": 3.542549095109742,
+      "speedup": 1.0367265469061877
+    },
+    "ooo_complete_configuration_vs_naive_inorder_rob8": {
+      "cycles_saved": 2416,
+      "cycle_reduction_percent": 19.4274686394339,
+      "speedup": 1.2411177644710578
+    }
+  }
+}

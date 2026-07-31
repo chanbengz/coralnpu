@@ -1,0 +1,89 @@
+{
+  "methodology": {
+    "yosys": "Yosys 0.52 (git sha1 fee39a3284c90249e1d9684cf6944ffbbcbb8f90)",
+    "abc": "UC Berkeley, ABC 1.01 (compiled May  4 2025 16:37:33)",
+    "sv2v": "sv2v v0.0.13",
+    "library": "NangateOpenCellLibrary typical, 45 nm",
+    "liberty_commit": "10d4ff741be3d7b806a9c289e7adc3e9fb69e8c3",
+    "liberty_sha256": "8d540a4d4cf6d09d27c87ad067857a9c0c2eeb023ab7a56e058cd3113db4e9b1",
+    "host_os": "Linux",
+    "host_arch": "x86_64",
+    "scope": "CoreMini scalar+FP+AXI standard-cell logic; RVV disabled",
+    "configuration": {
+      "enable_rvv": false,
+      "enable_vme": false,
+      "enable_float": true,
+      "enable_zfbfmin": true,
+      "fetch_data_bits": 128,
+      "lsu_data_bits": 128,
+      "use_axi": true,
+      "expose_debug_trace_ports": false
+    },
+    "timing_constraint": "none (area-oriented mapping)",
+    "synthesis_pass": "Yosys synth, dfflibmap, and ABC liberty mapping",
+    "defines": [
+      "SYNTHESIS",
+      "VERILATOR"
+    ],
+    "sram_handling": "8 KiB ITCM and 32 KiB DTCM Sram leaves black-boxed in every configuration",
+    "unpriced_generic_cells": {
+      "baseline": {
+        "$_DLATCH_N_": 2
+      },
+      "inorder16": {
+        "$_DLATCH_N_": 2
+      },
+      "ooo": {
+        "$_DLATCH_N_": 2
+      }
+    }
+  },
+  "rtl": {
+    "git_commit": "4ea57b4966a4f85c8f00c4cf246a5bf77d53b278",
+    "dirty_worktree": false,
+    "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline": {
+      "top": "CoreMiniAreaAxi",
+      "converted_verilog_sha256": "9065c3785f4d7b2902d8d1d3ccb1caeb88de2f7946ae2b47563e344e449fd47c"
+    },
+    "inorder16": {
+      "top": "CoreMiniAreaInOrder16Axi",
+      "converted_verilog_sha256": "c5fb5a3ca5996fe7d06e8ce58c86fe46549d58ad8d9fcde8c0da0d2af93541de"
+    },
+    "ooo": {
+      "top": "CoreMiniAreaOooAxi",
+      "converted_verilog_sha256": "ba46aac23ee736a860060e847cd77ee25b219e0a25c4ce958d3485ec4c331de7"
+    }
+  },
+  "baseline_rob8": {
+    "area_um2": 193525.108000,
+    "sequential_area_um2": null,
+    "cells": 129856
+  },
+  "inorder_rob16": {
+    "area_um2": 212424.142000,
+    "sequential_area_um2": null,
+    "cells": 142245
+  },
+  "ooo_rob16": {
+    "area_um2": 249750.858000,
+    "sequential_area_um2": null,
+    "cells": 171110
+  },
+  "retirement_config_8_to_16": {
+    "delta_um2": 18899.033999999985,
+    "overhead_percent": 9.765675469872356
+  },
+  "dynamic_issue_matched_rob": {
+    "delta_um2": 37326.716000000015,
+    "overhead_percent": 17.571786167318034
+  },
+  "total_feature": {
+    "delta_um2": 56225.75,
+    "overhead_percent": 29.05346524855059
+  },
+  "issue_queue": {
+    "area_um2": 35919.576000,
+    "sequential_area_um2": null
+  }
+}
