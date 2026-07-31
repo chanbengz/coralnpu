@@ -220,6 +220,8 @@ struct CoreMiniAxi_tb : Sysc_tb {
   absl::Status CheckStatusAsync();
 
   VERILATOR_MODEL *core() { return core_.get(); }
+  uint32_t cycle_count() { return cycle(); }
+  uint32_t core_cycle_count() const { return debug_io_.cycles.read().get_word(0); }
 
   void EnqueueTransactionSync(std::vector<DataTransfer> transfers);
   void EnqueueTransactionAsync(std::vector<DataTransfer> transfers);

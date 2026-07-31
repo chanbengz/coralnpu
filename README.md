@@ -21,7 +21,8 @@ Coral NPU offers the following top-level feature set:
 
 * RV32IMF_Zve32x RISC-V instruction set (specifically `rv32imf_zve32x_zicsr_zifencei_zbb`)
 * 32-bit address space for applications and operating system kernels
-* Four-stage processor, in-order dispatch, out-of-order retire
+* Four-stage processor with in-order dispatch by default and in-order
+  retirement of out-of-order execution completions
 * Four-way scalar, two-way vector dispatch
 * 128-bit SIMD, 256-bit (future) pipeline
 * 8 KB ITCM memory (tightly-coupled memory for instructions)
@@ -32,7 +33,7 @@ Coral NPU offers the following top-level feature set:
 
 ## System Requirements
 
-* Bazel 7.4.1
+* Bazelisk, using the version pinned in `.bazelversion` (currently Bazel 8.6.0)
 * Python 3.9-3.12 (3.13 support is in progress)
 * [SRecord](https://srecord.sourceforge.net/)
 
@@ -58,5 +59,13 @@ bazel build //tests/verilator_sim:core_mini_axi_sim
 # Run the binary on the simulator:
 bazel-bin/tests/verilator_sim/core_mini_axi_sim --binary bazel-out/k8-fastbuild-ST-dd8dc713f32d/bin/examples/coralnpu_v2_hello_world_add_floats.elf
 ```
+
+## Experimental scalar out-of-order issue
+
+An optional scalar issue window lets independent integer ALU and multiply
+operations execute while an older divide is stalled. Its depth follows the
+retirement-buffer size; the evaluation target uses 16 entries. The default core
+is unchanged. See [the design, verification, and softmax-inspired performance
+experiment](doc/out_of_order_pipeline.md).
 
 ![](doc/images/Coral_Logo_200px-2x.png)

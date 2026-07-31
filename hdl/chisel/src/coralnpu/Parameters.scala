@@ -121,7 +121,11 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, val xlen
   val rvvRegfileBaseAddr            = 64
   val rvvRegCount                   = 32
   val rvvRegCountWidth              = log2Ceil(rvvRegCount)
-  val retirementBufferSize          = 8
+  var retirementBufferSize          = 8
+  // Enable the conservative scalar integer out-of-order issue window. Disabled
+  // by default so existing production configurations remain bit-for-bit
+  // compatible; dedicated OOO build targets opt in explicitly.
+  var enableOutOfOrder               = false
   def retirementBufferIdxWidth: Int = {
     val activeFloatRegCount = (if (enableFloat) { floatRegCount }
                                else { 0 })
@@ -201,6 +205,8 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, val xlen
     newP.enableFloat = this.enableFloat
     newP.enableZfbfmin = this.enableZfbfmin
     newP.enableVectorBf16 = this.enableVectorBf16
+    newP.enableOutOfOrder = this.enableOutOfOrder
+    newP.retirementBufferSize = this.retirementBufferSize
     newP.enableFetchL0 = this.enableFetchL0
     newP.fetchDataBits = this.fetchDataBits
     newP.lsuDataBits = this.lsuDataBits

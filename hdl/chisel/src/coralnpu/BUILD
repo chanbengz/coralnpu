@@ -258,6 +258,17 @@ chisel_test(
 )
 
 chisel_test(
+    name = "coralnpu_out_of_order_issue_queue_tests",
+    srcs = [
+        "scalar/OutOfOrderIssueQueueTest.scala",
+    ],
+    deps = [
+        ":coralnpu_base",
+        ":coralnpu_scalar",
+    ],
+)
+
+chisel_test(
     name = "coralnpu_fetch_reorder_buffer_tests",
     size = "large",
     srcs = [
@@ -415,6 +426,7 @@ chisel_library(
         "scalar/Fetch.scala",
         "scalar/Lsu.scala",
         "scalar/Mlu.scala",
+        "scalar/OutOfOrderIssueQueue.scala",
         "scalar/Regfile.scala",
         "scalar/SCore.scala",
         "scalar/UncachedFetch.scala",
@@ -592,6 +604,124 @@ template_rule(
     },
     chisel_lib = ":coralnpu",
     emit_class = "coralnpu.EmitCore",
+    vopts = CORE_MINI_AXI_VOPTS,
+)
+
+chisel_cc_library(
+    name = "core_mini_area_axi_cc_library",
+    chisel_lib = ":coralnpu",
+    emit_class = "coralnpu.EmitCore",
+    extra_outs = [
+        "VCoreMiniAreaAxi_parameters.h",
+        "CoreMiniAreaAxi.zip",
+    ],
+    gen_flags = [
+        "--enableFetchL0=False",
+        "--fetchDataBits=128",
+        "--lsuDataBits=128",
+        "--enableFloat=True",
+        "--enableZfbfmin=True",
+        "--moduleName=CoreMiniArea",
+        "--useAxi",
+    ],
+    module_name = "CoreMiniAreaAxi",
+    verilog_file_path = "CoreMiniAreaAxi.sv",
+    vopts = CORE_MINI_AXI_VOPTS,
+)
+
+chisel_cc_library(
+    name = "core_mini_area_inorder16_axi_cc_library",
+    chisel_lib = ":coralnpu",
+    emit_class = "coralnpu.EmitCore",
+    extra_outs = [
+        "VCoreMiniAreaInOrder16Axi_parameters.h",
+        "CoreMiniAreaInOrder16Axi.zip",
+    ],
+    gen_flags = [
+        "--enableFetchL0=False",
+        "--fetchDataBits=128",
+        "--lsuDataBits=128",
+        "--enableFloat=True",
+        "--enableZfbfmin=True",
+        "--retirementBufferSize=16",
+        "--moduleName=CoreMiniAreaInOrder16",
+        "--useAxi",
+    ],
+    module_name = "CoreMiniAreaInOrder16Axi",
+    verilog_file_path = "CoreMiniAreaInOrder16Axi.sv",
+    vopts = CORE_MINI_AXI_VOPTS,
+)
+
+chisel_cc_library(
+    name = "core_mini_area_ooo_axi_cc_library",
+    chisel_lib = ":coralnpu",
+    emit_class = "coralnpu.EmitCore",
+    extra_outs = [
+        "VCoreMiniAreaOooAxi_parameters.h",
+        "CoreMiniAreaOooAxi.zip",
+    ],
+    gen_flags = [
+        "--enableFetchL0=False",
+        "--fetchDataBits=128",
+        "--lsuDataBits=128",
+        "--enableFloat=True",
+        "--enableZfbfmin=True",
+        "--enableOutOfOrder=True",
+        "--retirementBufferSize=16",
+        "--moduleName=CoreMiniAreaOoo",
+        "--useAxi",
+    ],
+    module_name = "CoreMiniAreaOooAxi",
+    verilog_file_path = "CoreMiniAreaOooAxi.sv",
+    vopts = CORE_MINI_AXI_VOPTS,
+)
+
+chisel_cc_library(
+    name = "core_mini_inorder16_axi_cc_library",
+    chisel_lib = ":coralnpu",
+    emit_class = "coralnpu.EmitCore",
+    extra_outs = [
+        "VCoreMiniInOrder16Axi_parameters.h",
+        "CoreMiniInOrder16Axi.zip",
+    ],
+    gen_flags = [
+        "--enableFetchL0=False",
+        "--fetchDataBits=128",
+        "--lsuDataBits=128",
+        "--enableFloat=True",
+        "--enableZfbfmin=True",
+        "--retirementBufferSize=16",
+        "--moduleName=CoreMiniInOrder16",
+        "--useAxi",
+        "--exposeDebugPorts=True",
+    ],
+    module_name = "CoreMiniInOrder16Axi",
+    verilog_file_path = "CoreMiniInOrder16Axi.sv",
+    vopts = CORE_MINI_AXI_VOPTS,
+)
+
+chisel_cc_library(
+    name = "core_mini_ooo_axi_cc_library",
+    chisel_lib = ":coralnpu",
+    emit_class = "coralnpu.EmitCore",
+    extra_outs = [
+        "VCoreMiniOooAxi_parameters.h",
+        "CoreMiniOooAxi.zip",
+    ],
+    gen_flags = [
+        "--enableFetchL0=False",
+        "--fetchDataBits=128",
+        "--lsuDataBits=128",
+        "--enableFloat=True",
+        "--enableZfbfmin=True",
+        "--enableOutOfOrder=True",
+        "--retirementBufferSize=16",
+        "--moduleName=CoreMiniOoo",
+        "--useAxi",
+        "--exposeDebugPorts=True",
+    ],
+    module_name = "CoreMiniOooAxi",
+    verilog_file_path = "CoreMiniOooAxi.sv",
     vopts = CORE_MINI_AXI_VOPTS,
 )
 

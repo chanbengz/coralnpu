@@ -119,6 +119,10 @@ object EmitCore extends App {
       p.enableVectorBf16 = arg.split("=")(1).toBoolean
     } else if (arg.startsWith("--enableVerification")) {
       p.enableVerification = arg.split("=")(1).toBoolean
+    } else if (arg.startsWith("--enableOutOfOrder")) {
+      p.enableOutOfOrder = arg.split("=")(1).toBoolean
+    } else if (arg.startsWith("--retirementBufferSize")) {
+      p.retirementBufferSize = arg.split("=")(1).toInt
     } else if (arg.startsWith("--exposeDebugPorts")) {
       p.rawExposeDebugPorts = arg.split("=")(1).toBoolean
     } else if (arg.startsWith("--lsuDataBits")) {

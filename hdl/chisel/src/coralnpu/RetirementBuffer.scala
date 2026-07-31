@@ -38,6 +38,7 @@ class RetirementBufferIO(p: Parameters) extends Bundle {
   val nRetired    = Output(UInt(log2Ceil(p.retirementBufferSize + 1).W))
   val empty       = Output(Bool())
   val trapPending = Output(Bool())
+  val flush       = Output(Bool())
   val debug       = Option.when(p.shouldExposeDebugPorts)(Output(new RetirementBufferDebugIO(p)))
 }
 
@@ -524,6 +525,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
 
   val trapRetired = trapReadyToRetire
   instBuffer.io.flush := trapRetired
+  io.flush            := trapRetired
 
   if (!mini && p.enableRvv) {
     accEnqPtr := Mux(trapRetired, 0.U, accEnqPtr + instBuffer.io.enqValid)

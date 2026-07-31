@@ -16,6 +16,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include <iostream>
 #include <optional>
 #include <string>
 #include <thread>
@@ -71,6 +72,9 @@ static bool run(const char* name, const std::string binary, const int cycles,
     absl::MutexLock lock_(&halted_mtx);
     halted_cv.Wait(&halted_mtx);
   }
+
+  std::cout << std::dec << "Benchmark cycles: " << tb.core_cycle_count() << '\n';
+  std::cout << std::dec << "Simulation cycles: " << tb.cycle_count() << '\n';
 
   if (!tb.io_fault && !tb.tohost_halt) {
     CHECK_OK(tb.CheckStatusSync());

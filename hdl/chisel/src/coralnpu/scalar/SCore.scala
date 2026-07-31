@@ -63,19 +63,156 @@ class SCore(p: Parameters) extends Module {
   val fault_manager     = Module(new FaultManager(p))
   val retirement_buffer = Module(new RetirementBuffer(p, mini = !p.useRetirementBuffer))
   val rob_io            = retirement_buffer.io
+  val issueQueue        =
+    Option.when(p.enableOutOfOrder)(Module(new OutOfOrderIssueQueue(p, p.retirementBufferSize)))
+  val directDispatch      = WireDefault(true.B)
+  val debugRequestWaiting = WireDefault(io.dm.debug_req)
+  val debugRequestToCsr   = WireDefault(io.dm.debug_req)
 
-  rob_io.inst            := dispatch.io.inst
-  rob_io.jump            := dispatch.io.jump
-  rob_io.branch          := dispatch.io.branch
-  rob_io.writeAddrScalar := dispatch.io.rdMark
+  if (p.enableOutOfOrder) {
+    val queue = issueQueue.get
+    queue.io.scoreboard := regfile.io.scoreboard.regd
+    // Retirement flush is combinational because it is derived from the
+    // completing trap entry. Register it before feeding the issue window so
+    // allocation cannot form a path back into ROB completion. Trap-capable
+    // instructions are full drain boundaries, asserted below.
+    val issueWindowFlush = RegNext(rob_io.flush, false.B)
+    queue.io.flush := issueWindowFlush
+
+    // External debug requests are deferred to a precise window boundary.
+    // Latching preserves a pulse while queued/issued arithmetic drains.
+    val deferredDebugRequest = RegInit(false.B)
+    val debugBoundaryReady   = queue.io.empty && rob_io.empty
+    val debugWaiting         = io.dm.debug_req || deferredDebugRequest
+    debugRequestWaiting := debugWaiting
+    debugRequestToCsr   := debugWaiting && debugBoundaryReady
+    when(io.dm.debug_req) {
+      deferredDebugRequest := true.B
+    }
+    when(debugRequestToCsr) {
+      deferredDebugRequest := false.B
+    }
+
+    val safe = fetch.io.inst.lanes.map(lane => OutOfOrderIssue.isSafeScalarArithmetic(p, lane.bits))
+    val safePrefix = safe.scanLeft(true.B)(_ && _).drop(1)
+
+    // Unsafe instructions are full issue-window boundaries: the ROB drains
+    // before one uses the legacy path, and no new arithmetic window opens until
+    // that instruction retires. This keeps faults and control-flow recovery out
+    // of the conservative OOO domain.
+    val windowDraining     = queue.io.empty && !rob_io.empty
+    val windowBoundaryOpen = !windowDraining
+    val forceDirect        = !safe(0) || dispatch.io.single_step
+    directDispatch :=
+      queue.io.empty && rob_io.empty && fetch.io.inst.lanes(0).valid &&
+        forceDirect && !issueWindowFlush
+
+    // Allocation obeys the same global stop conditions as DispatchV2. No
+    // younger work is admitted once a redirect, trap, halt, single-step, or
+    // debug request is visible.
+    val allocationAllowed =
+      windowBoundaryOpen &&
+        !dispatch.io.halted &&
+        !dispatch.io.interlock &&
+        !dispatch.io.retirement_buffer_trap_pending &&
+        !issueWindowFlush &&
+        !dispatch.io.single_step &&
+        !debugRequestWaiting
+
+    for (i <- 0 until p.instructionLanes) {
+      val laneZero   = (i == 0).B
+      val robHasSlot = i.U < rob_io.nSpace
+      queue.io.enq(i).valid :=
+        !directDispatch && allocationAllowed &&
+          fetch.io.inst.lanes(i).valid && safePrefix(i) && robHasSlot
+      queue.io.enq(i).bits := fetch.io.inst.lanes(i).bits
+
+      dispatch.io.inst(i).valid :=
+        Mux(
+          directDispatch,
+          laneZero && fetch.io.inst.lanes(i).valid,
+          queue.io.issue(i).valid
+        )
+      dispatch.io.inst(i).bits :=
+        Mux(directDispatch, fetch.io.inst.lanes(i).bits, queue.io.issue(i).bits)
+      queue.io.issue(i).ready := !directDispatch && dispatch.io.inst(i).ready
+
+      fetch.io.inst.lanes(i).ready := Mux(
+        directDispatch,
+        laneZero && dispatch.io.inst(i).ready,
+        allocationAllowed && safePrefix(i) && robHasSlot && queue.io.enq(i).ready
+      )
+
+      // While a direct instruction drains, expose (but do not consume) the next
+      // fetch PC to the ROB. Control-flow entries use this lookahead to finish
+      // their link check.
+      rob_io.inst(i).valid := Mux(
+        directDispatch,
+        dispatch.io.inst(i).valid,
+        Mux(windowDraining && laneZero, fetch.io.inst.lanes(i).valid, queue.io.enq(i).valid)
+      )
+      rob_io.inst(i).bits :=
+        Mux(
+          directDispatch,
+          dispatch.io.inst(i).bits,
+          Mux(windowDraining && laneZero, fetch.io.inst.lanes(i).bits, queue.io.enq(i).bits)
+        )
+      rob_io.inst(i).ready := Mux(
+        directDispatch,
+        dispatch.io.inst(i).ready,
+        !windowDraining && queue.io.enq(i).ready
+      )
+
+      rob_io.jump(i)   := Mux(directDispatch, dispatch.io.jump(i), false.B)
+      rob_io.branch(i) := Mux(directDispatch, dispatch.io.branch(i), false.B)
+
+      rob_io.writeAddrScalar(i).valid :=
+        Mux(directDispatch, dispatch.io.rdMark(i).valid, queue.io.enq(i).fire)
+      rob_io.writeAddrScalar(i).addr :=
+        Mux(directDispatch, dispatch.io.rdMark(i).addr, queue.io.enq(i).bits.inst(11, 7))
+
+      when(!directDispatch && !windowDraining) {
+        assert(queue.io.enq(i).fire === rob_io.inst(i).fire)
+        assert(queue.io.enq(i).fire === fetch.io.inst.lanes(i).fire)
+      }
+    }
+
+    assert(!directDispatch || queue.io.empty)
+    when(directDispatch || issueWindowFlush) {
+      assert(!queue.io.enq.map(_.fire).reduce(_ || _))
+      assert(!queue.io.issue.map(_.fire).reduce(_ || _))
+    }
+    when(rob_io.flush) {
+      assert(queue.io.empty)
+      assert(regfile.io.scoreboard.regd === 0.U)
+    }
+    assert(
+      !windowDraining ||
+        !(fetch.io.inst.lanes.map(_.fire).reduce(_ || _) ||
+          queue.io.enq.map(_.fire).reduce(_ || _) ||
+          queue.io.issue.map(_.fire).reduce(_ || _))
+    )
+  } else {
+    dispatch.io.inst <> fetch.io.inst.lanes
+    rob_io.inst            := dispatch.io.inst
+    rob_io.jump            := dispatch.io.jump
+    rob_io.branch          := dispatch.io.branch
+    rob_io.writeAddrScalar := dispatch.io.rdMark
+  }
+
   (0 until p.instructionLanes + 2).foreach(i => {
     rob_io.writeDataScalar(i) := regfile.io.writeData(i)
   })
-  dispatch.io.retirement_buffer_nSpace       := rob_io.nSpace
+  dispatch.io.retirement_buffer_nSpace :=
+    Mux(directDispatch, rob_io.nSpace, p.retirementBufferSize.U)
   dispatch.io.retirement_buffer_empty        := rob_io.empty
   dispatch.io.retirement_buffer_trap_pending := rob_io.trapPending
   if (p.enableRvv) {
-    rob_io.writeAddrVector.get := dispatch.io.rvvRdMark.get
+    for (i <- 0 until p.instructionLanes) {
+      rob_io.writeAddrVector.get(i).valid :=
+        directDispatch && dispatch.io.rvvRdMark.get(i).valid
+      rob_io.writeAddrVector.get(i).addr := dispatch.io.rvvRdMark.get(i).addr
+    }
     (0 until p.instructionLanes).foreach(i => {
       rob_io.writeDataVector.get(i).valid               := io.rvvcore.get.rd_rob2rt_o(i).valid
       rob_io.writeDataVector.get(i).bits.addr           := io.rvvcore.get.rd_rob2rt_o(i).w_index
@@ -97,6 +234,11 @@ class SCore(p: Parameters) extends Module {
   val bru = (0 until p.instructionLanes).map(x => Seq(Bru(p, x == 0))).reduce(_ ++ _)
   val mlu = Mlu(p)
   val dvu = Dvu(p)
+
+  issueQueue.foreach { queue =>
+    queue.io.mluReady := mlu.io.req(0).ready
+    queue.io.dvuReady := dvu.io.req.ready
+  }
 
   // Wire up the core.
   val branchTaken = bru.map(x => x.io.taken.valid).reduce(_ || _)
@@ -128,7 +270,6 @@ class SCore(p: Parameters) extends Module {
   // ---------------------------------------------------------------------------
   // Decode
   // Decode/Dispatch
-  dispatch.io.inst <> fetch.io.inst.lanes
   dispatch.io.halted := csr.io.halted || csr.io.wfi || csr.io.dm.debug_mode || csr.io.dm.entering_debug_mode
   dispatch.io.mactive          := false.B
   dispatch.io.lsuActive        := lsu.io.active
@@ -180,8 +321,12 @@ class SCore(p: Parameters) extends Module {
     bru(i).io.rs2             := regfile.io.readData(2 * i + 1)
     bru(i).io.target          := regfile.io.target(i)
     dispatch.io.jalrTarget(i) := regfile.io.target(i)
-    rob_io.targets(i)         := dispatch.io.bruTarget(i)
-    rob_io.jalrTargets(i)     := regfile.io.target(i).data
+    rob_io.targets(i)         := Mux(
+      directDispatch,
+      dispatch.io.bruTarget(i),
+      fetch.io.inst.lanes(i).bits.addr + 4.U
+    )
+    rob_io.jalrTargets(i) := Mux(directDispatch, regfile.io.target(i).data, 0.U)
   }
 
   bru(0).io.csr.get <> csr.io.bru
@@ -216,12 +361,19 @@ class SCore(p: Parameters) extends Module {
   // this instruction is executed.
   val nextInstPC = Mux(bruTaken, realTarget, dispatch.io.inst(0).bits.addr)
 
-  csr.io.dm.current_pc := dispatch.io.inst(0).bits.addr
-  csr.io.dm.next_pc    := nextInstPC
+  val externalDebugPc =
+    if (p.enableOutOfOrder) {
+      Mux(fetch.io.inst.lanes(0).valid, fetch.io.inst.lanes(0).bits.addr, fetch.io.pc)
+    } else {
+      dispatch.io.inst(0).bits.addr
+    }
+  csr.io.dm.current_pc :=
+    Mux(debugRequestToCsr, externalDebugPc, dispatch.io.inst(0).bits.addr)
+  csr.io.dm.next_pc := nextInstPC
 
   val stepTriggered    = (!csr.io.dm.debug_mode && csr.io.dm.dcsr_step && dispatch.io.inst(0).fire)
   val stepTriggeredReg = RegNext(stepTriggered, false.B)
-  csr.io.dm.debug_req  := io.dm.debug_req || /* Request from external debugger */
+  csr.io.dm.debug_req  := debugRequestToCsr || /* Request from external debugger */
     stepTriggeredReg /* Single-step via CSR */
   csr.io.dm.resume_req := io.dm.resume_req
   io.dm.debug_mode     := csr.io.dm.debug_mode
@@ -416,7 +568,8 @@ class SCore(p: Parameters) extends Module {
     floatCore.get.io.lsu_rd.bits.addr := lsu.io.rd_flt.bits.addr
     floatCore.get.io.lsu_rd.bits.data := lsu.io.rd_flt.bits.data
 
-    rob_io.writeAddrFloat.get := dispatch.io.rdMark_flt.get
+    rob_io.writeAddrFloat.get.valid := directDispatch && dispatch.io.rdMark_flt.get.valid
+    rob_io.writeAddrFloat.get.addr  := dispatch.io.rdMark_flt.get.addr
     (0 until 2).foreach(i => {
       rob_io.writeDataFloat.get(i).valid     := fRegfile.get.io.write_ports(i).valid
       rob_io.writeDataFloat.get(i).bits.addr := fRegfile.get.io.write_ports(i).addr
@@ -506,9 +659,11 @@ class SCore(p: Parameters) extends Module {
   else { true.B }
   val rvvIdle = if (p.enableRvv) { io.rvvcore.get.rvv_idle }
   else { true.B }
+  val issueWindowEmpty = issueQueue.map(_.io.empty).getOrElse(true.B)
   // Scalar and float arithmetics don't actually trap, we're just trying to be precise here.
   val fetchFaultValid = fetch.io.fault.valid &&
     !isBranching &&                         // Branches and jumps
+    issueWindowEmpty &&                     // Pending unissued scalar operation
     (regfile.io.scoreboard.regd === 0.U) && // Pending scalar operation
     floatIdle &&                            // Pending float operation
     rvvIdle &&                              // Could have vill

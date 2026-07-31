@@ -26,4 +26,22 @@ coralnpu_v2_binary(
     srcs = ["rvv_add_intrinsic.cc"],
 )
 
+coralnpu_v2_binary(
+    name = "softmax_ooo_benchmark",
+    srcs = ["softmax_ooo_benchmark.S"],
+    crt = "",
+    enable_vmem = False,
+    linker_script = "ooo_pipeline_benchmark.ld",
+    tags = ["manual"],
+)
+
+coralnpu_v2_binary(
+    name = "softmax_static_schedule_benchmark",
+    srcs = ["softmax_static_schedule_benchmark.S"],
+    crt = "",
+    enable_vmem = False,
+    linker_script = "ooo_pipeline_benchmark.ld",
+    tags = ["manual"],
+)
+
 collect_coralnpu_elfs()
